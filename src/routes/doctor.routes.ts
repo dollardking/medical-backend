@@ -1,11 +1,28 @@
 import { Router } from "express";
-import { createDoctor } from "../controllers/doctor.controller";
+import {
+  createDoctor,
+  addAvailability,
+  getDoctors,
+  getDoctorById,
+  getDoctorAvailabilities,
+} from "../controllers/doctor.controller";
 import { verifyToken } from "../middlewares/auth.middleware";
 import { checkRole } from "../middlewares/role.middleware";
-import { addAvailability } from "../controllers/doctor.controller";
 
 const router = Router();
 
-router.post("/:doctorId/availability", verifyToken, checkRole("ADMIN"), createDoctor, addAvailability);
+// Public
+router.get("/", getDoctors);
+router.get("/:id", getDoctorById);
+router.get("/:id/availability", getDoctorAvailabilities);
+
+// Admin
+router.post("/", verifyToken, checkRole("ADMIN"), createDoctor);
+router.post(
+  "/:doctorId/availability",
+  verifyToken,
+  checkRole("ADMIN"),
+  addAvailability
+);
 
 export default router;

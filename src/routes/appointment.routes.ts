@@ -4,7 +4,7 @@ import {
   createAppointment,
   getDoctorAppointments,
   confirmAppointment,
-  cancelAppointment
+  cancelAppointment,
 } from "../controllers/appointment.controller";
 
 import { verifyToken } from "../middlewares/auth.middleware";

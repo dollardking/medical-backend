@@ -2,7 +2,20 @@ import prisma from "../config/prisma";
 import { createAppointmentSchema } from "../validators/appointment.validator";
 import { sendAppointmentConfirmationEmail } from "./email.service";
 
+const timeToMinutes = (time: string) => {
+  const [h, m] = time.split(":").map(Number);
+  return h * 60 + m;
+};
+
+const minutesToTime = (minutes: number) => {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+};
+
 export const generateSlots = async (doctorId: string, date: string) => {
+
   const doctor = await prisma.doctor.findUnique({
     where: { id: doctorId },
   });
@@ -11,61 +24,71 @@ export const generateSlots = async (doctorId: string, date: string) => {
     throw new Error("DOCTOR_NOT_FOUND");
   }
 
-  const dayOfWeek = new Date(date).getDay();
+  const appointmentDate = new Date(date);
+
+  if (isNaN(appointmentDate.getTime())) {
+    throw new Error("INVALID_DATE");
+  }
+
+  const dayOfWeek = appointmentDate.getDay();
 
   const availability = await prisma.doctorAvailability.findMany({
     where: {
       doctorId,
       dayOfWeek,
     },
+    orderBy: {
+      startTime: "asc",
+    },
   });
 
-  if (availability.length === 0) {
-    return [];
-  }
+  if (!availability.length) return [];
+
+  const dayStart = new Date(date);
+  dayStart.setHours(0,0,0,0);
+
+  const dayEnd = new Date(date);
+  dayEnd.setHours(23,59,59,999);
 
   const appointments = await prisma.appointment.findMany({
     where: {
       doctorId,
-      date: new Date(date),
+      date: {
+        gte: dayStart,
+        lte: dayEnd,
+      },
       status: {
         not: "CANCELLED",
       },
     },
   });
 
-  const bookedTimes = appointments.map((a) => a.time);
-  const duration = doctor.appointmentDuration;
+  const bookedTimes = new Set(appointments.map(a => a.time));
 
   const slots: string[] = [];
 
-  availability.forEach((slot) => {
-    const [startHour, startMinute] = slot.startTime.split(":").map(Number);
-    const [endHour, endMinute] = slot.endTime.split(":").map(Number);
+  for (const slot of availability) {
 
-    const start = new Date();
-    start.setHours(startHour, startMinute, 0, 0);
+    let current = timeToMinutes(slot.startTime);
+    const end = timeToMinutes(slot.endTime);
 
-    const end = new Date();
-    end.setHours(endHour, endMinute, 0, 0);
+    while (current + doctor.appointmentDuration <= end) {
 
-    while (start < end) {
-      const hour = start.getHours().toString().padStart(2, "0");
-      const minute = start.getMinutes().toString().padStart(2, "0");
-      const time = `${hour}:${minute}`;
+      const time = minutesToTime(current);
 
-      if (!bookedTimes.includes(time)) {
+      if (!bookedTimes.has(time)) {
         slots.push(time);
       }
 
-      start.setMinutes(start.getMinutes() + duration);
+      current += doctor.appointmentDuration;
     }
-  });
+  }
 
   return slots;
 };
 
 export const createAppointment = async (data: unknown) => {
+
   const parsed = createAppointmentSchema.safeParse(data);
 
   if (!parsed.success) {
@@ -88,8 +111,10 @@ export const createAppointment = async (data: unknown) => {
     throw new Error("INVALID_DATE");
   }
 
-  const now = new Date();
-  if (appointmentDate < new Date(now.getFullYear(), now.getMonth(), now.getDate())) {
+  const today = new Date();
+  today.setHours(0,0,0,0);
+
+  if (appointmentDate < today) {
     throw new Error("INVALID_DATE");
   }
 
@@ -106,6 +131,7 @@ export const createAppointment = async (data: unknown) => {
   }
 
   const appointment = await prisma.$transaction(async (tx) => {
+
     const existingAppointment = await tx.appointment.findUnique({
       where: {
         doctorId_date_time: {
@@ -120,7 +146,7 @@ export const createAppointment = async (data: unknown) => {
       throw new Error("SLOT_ALREADY_BOOKED");
     }
 
-    const newAppointment = await tx.appointment.create({
+    return tx.appointment.create({
       data: {
         doctorId,
         patientName,
@@ -128,21 +154,27 @@ export const createAppointment = async (data: unknown) => {
         patientPhone,
         date: appointmentDate,
         time,
+        status: "PENDING",
       },
     });
 
-    return newAppointment;
   });
 
-  await sendAppointmentConfirmationEmail({
-    to: patientEmail,
-    patientName,
-    doctorName: doctor.user.name,
-    date,
-    time,
-    cabinetName: doctor.cabinet.name,
-    cabinetAddress: `${doctor.cabinet.address}, ${doctor.cabinet.city}`,
-  });
+  try {
+
+    await sendAppointmentConfirmationEmail({
+      to: patientEmail,
+      patientName,
+      doctorName: doctor.user.name,
+      date,
+      time,
+      cabinetName: doctor.cabinet.name,
+      cabinetAddress: `${doctor.cabinet.address}, ${doctor.cabinet.city}`,
+    });
+
+  } catch {
+    // On ignore les erreurs d'email
+  }
 
   return appointment;
 };
@@ -152,6 +184,7 @@ export const getDoctorAppointments = async (
   page = 1,
   limit = 10
 ) => {
+
   const doctor = await prisma.doctor.findUnique({
     where: { userId },
   });
@@ -160,9 +193,7 @@ export const getDoctorAppointments = async (
     throw new Error("DOCTOR_NOT_FOUND");
   }
 
-  const safePage = Number(page) > 0 ? Number(page) : 1;
-  const safeLimit = Number(limit) > 0 ? Number(limit) : 10;
-  const skip = (safePage - 1) * safeLimit;
+  const skip = (page - 1) * limit;
 
   const [appointments, total] = await Promise.all([
     prisma.appointment.findMany({
@@ -174,7 +205,7 @@ export const getDoctorAppointments = async (
         { time: "asc" },
       ],
       skip,
-      take: safeLimit,
+      take: limit,
     }),
     prisma.appointment.count({
       where: {
@@ -186,15 +217,35 @@ export const getDoctorAppointments = async (
   return {
     data: appointments,
     meta: {
-      page: safePage,
-      limit: safeLimit,
+      page,
+      limit,
       total,
-      totalPages: Math.ceil(total / safeLimit),
+      totalPages: Math.ceil(total / limit),
     },
   };
 };
 
-export const confirmAppointment = async (appointmentId: string) => {
+export const confirmAppointment = async (
+  appointmentId: string,
+  userId: string
+) => {
+
+  const doctor = await prisma.doctor.findUnique({
+    where: { userId },
+  });
+
+  if (!doctor) throw new Error("DOCTOR_NOT_FOUND");
+
+  const appointment = await prisma.appointment.findUnique({
+    where: { id: appointmentId },
+  });
+
+  if (!appointment) throw new Error("APPOINTMENT_NOT_FOUND");
+
+  if (appointment.doctorId !== doctor.id) {
+    throw new Error("FORBIDDEN_APPOINTMENT_ACCESS");
+  }
+
   return prisma.appointment.update({
     where: { id: appointmentId },
     data: {
@@ -203,7 +254,27 @@ export const confirmAppointment = async (appointmentId: string) => {
   });
 };
 
-export const cancelAppointment = async (appointmentId: string) => {
+export const cancelAppointment = async (
+  appointmentId: string,
+  userId: string
+) => {
+
+  const doctor = await prisma.doctor.findUnique({
+    where: { userId },
+  });
+
+  if (!doctor) throw new Error("DOCTOR_NOT_FOUND");
+
+  const appointment = await prisma.appointment.findUnique({
+    where: { id: appointmentId },
+  });
+
+  if (!appointment) throw new Error("APPOINTMENT_NOT_FOUND");
+
+  if (appointment.doctorId !== doctor.id) {
+    throw new Error("FORBIDDEN_APPOINTMENT_ACCESS");
+  }
+
   return prisma.appointment.update({
     where: { id: appointmentId },
     data: {

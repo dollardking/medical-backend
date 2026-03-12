@@ -14,7 +14,7 @@ export const getAvailableSlots = async (req: Request, res: Response) => {
 
     const slots = await service.generateSlots(doctorId, date);
 
-    res.json(slots);
+    return res.json(slots);
   } catch (error: any) {
     if (error.message === "DOCTOR_NOT_FOUND") {
       return res.status(404).json({
@@ -22,7 +22,7 @@ export const getAvailableSlots = async (req: Request, res: Response) => {
       });
     }
 
-    res.status(500).json({
+    return res.status(500).json({
       message: "Server error",
     });
   }
@@ -32,9 +32,12 @@ export const createAppointment = async (req: Request, res: Response) => {
   try {
     const appointment = await service.createAppointment(req.body);
 
-    res.status(201).json(appointment);
+    return res.status(201).json(appointment);
   } catch (error: any) {
-    if (typeof error.message === "string" && error.message.startsWith("VALIDATION_ERROR:")) {
+    if (
+      typeof error.message === "string" &&
+      error.message.startsWith("VALIDATION_ERROR:")
+    ) {
       return res.status(400).json({
         message: error.message.replace("VALIDATION_ERROR:", ""),
       });
@@ -58,7 +61,7 @@ export const createAppointment = async (req: Request, res: Response) => {
       });
     }
 
-    res.status(500).json({
+    return res.status(500).json({
       message: "Server error",
     });
   }
@@ -72,7 +75,7 @@ export const getDoctorAppointments = async (req: Request, res: Response) => {
 
     const result = await service.getDoctorAppointments(userId, page, limit);
 
-    res.json(result);
+    return res.json(result);
   } catch (error: any) {
     if (error.message === "DOCTOR_NOT_FOUND") {
       return res.status(404).json({
@@ -80,7 +83,7 @@ export const getDoctorAppointments = async (req: Request, res: Response) => {
       });
     }
 
-    res.status(500).json({
+    return res.status(500).json({
       message: "Server error",
     });
   }
@@ -89,11 +92,31 @@ export const getDoctorAppointments = async (req: Request, res: Response) => {
 export const confirmAppointment = async (req: Request, res: Response) => {
   try {
     const appointmentId = req.params.id as string;
-    const appointment = await service.confirmAppointment(appointmentId);
+    const userId = (req as any).user.userId;
 
-    res.json(appointment);
-  } catch (error) {
-    res.status(500).json({
+    const appointment = await service.confirmAppointment(appointmentId, userId);
+
+    return res.json(appointment);
+  } catch (error: any) {
+    if (error.message === "DOCTOR_NOT_FOUND") {
+      return res.status(404).json({
+        message: "Doctor profile not found",
+      });
+    }
+
+    if (error.message === "APPOINTMENT_NOT_FOUND") {
+      return res.status(404).json({
+        message: "Appointment not found",
+      });
+    }
+
+    if (error.message === "FORBIDDEN_APPOINTMENT_ACCESS") {
+      return res.status(403).json({
+        message: "You are not allowed to modify this appointment",
+      });
+    }
+
+    return res.status(500).json({
       message: "Server error",
     });
   }
@@ -102,11 +125,31 @@ export const confirmAppointment = async (req: Request, res: Response) => {
 export const cancelAppointment = async (req: Request, res: Response) => {
   try {
     const appointmentId = req.params.id as string;
-    const appointment = await service.cancelAppointment(appointmentId);
+    const userId = (req as any).user.userId;
 
-    res.json(appointment);
-  } catch (error) {
-    res.status(500).json({
+    const appointment = await service.cancelAppointment(appointmentId, userId);
+
+    return res.json(appointment);
+  } catch (error: any) {
+    if (error.message === "DOCTOR_NOT_FOUND") {
+      return res.status(404).json({
+        message: "Doctor profile not found",
+      });
+    }
+
+    if (error.message === "APPOINTMENT_NOT_FOUND") {
+      return res.status(404).json({
+        message: "Appointment not found",
+      });
+    }
+
+    if (error.message === "FORBIDDEN_APPOINTMENT_ACCESS") {
+      return res.status(403).json({
+        message: "You are not allowed to modify this appointment",
+      });
+    }
+
+    return res.status(500).json({
       message: "Server error",
     });
   }

@@ -13,13 +13,7 @@ export const createDoctor = async (req: Request, res: Response) => {
       appointmentDuration,
     } = req.body;
 
-    if (
-      !name ||
-      !email ||
-      !password ||
-      !specialty ||
-      !appointmentDuration
-    ) {
+    if (!name || !email || !password || !specialty || !appointmentDuration) {
       return res.status(400).json({
         message:
           "name, email, password, specialty and appointmentDuration are required",
@@ -82,6 +76,8 @@ export const createDoctor = async (req: Request, res: Response) => {
       },
     });
   } catch (error) {
+    console.error(error);
+
     return res.status(500).json({
       message: "Server error",
     });
@@ -128,6 +124,8 @@ export const addAvailability = async (req: Request, res: Response) => {
       data: availability,
     });
   } catch (error) {
+    console.error(error);
+
     return res.status(500).json({
       message: "Server error",
     });
@@ -158,7 +156,7 @@ export const getDoctors = async (_req: Request, res: Response) => {
         },
       },
       orderBy: {
-        createdAt: "desc",
+        id: "desc",
       },
     });
 
@@ -167,13 +165,14 @@ export const getDoctors = async (_req: Request, res: Response) => {
       specialty: doctor.specialty,
       description: doctor.description,
       appointmentDuration: doctor.appointmentDuration,
-      createdAt: doctor.createdAt,
       user: doctor.user,
       cabinet: doctor.cabinet,
     }));
 
     return res.json(formattedDoctors);
   } catch (error) {
+    console.error(error);
+
     return res.status(500).json({
       message: "Server error",
     });
@@ -219,11 +218,12 @@ export const getDoctorById = async (req: Request, res: Response) => {
       specialty: doctor.specialty,
       description: doctor.description,
       appointmentDuration: doctor.appointmentDuration,
-      createdAt: doctor.createdAt,
       user: doctor.user,
       cabinet: doctor.cabinet,
     });
   } catch (error) {
+    console.error(error);
+
     return res.status(500).json({
       message: "Server error",
     });
@@ -246,11 +246,16 @@ export const getDoctorAvailabilities = async (req: Request, res: Response) => {
 
     const availabilities = await prisma.doctorAvailability.findMany({
       where: { doctorId },
-      orderBy: [{ dayOfWeek: "asc" }, { startTime: "asc" }],
+      orderBy: [
+        { dayOfWeek: "asc" },
+        { startTime: "asc" },
+      ],
     });
 
     return res.json(availabilities);
   } catch (error) {
+    console.error(error);
+
     return res.status(500).json({
       message: "Server error",
     });
